@@ -880,8 +880,8 @@ Local<Object> ODBC::GetSQLError (SQLSMALLINT handleType, SQLHANDLE handle, char*
   SQLSMALLINT len;
   SQLINTEGER statusRecCount;
   SQLRETURN ret;
-  char errorSQLState[14];
-  char errorMessage[ERROR_MESSAGE_BUFFER_BYTES];
+  SQLTCHAR errorSQLState[6];
+  SQLTCHAR errorMessage[ERROR_MESSAGE_BUFFER_CHARS];
 
   ret = SQLGetDiagField(
     handleType,

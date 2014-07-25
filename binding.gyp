@@ -10,7 +10,7 @@
         'src/dynodbc.cpp'
       ],
       'defines' : [
-        'UNICODE'
+        'UNICODE', 'SQLSERVER_STRINGS'
       ],
       'conditions' : [
         [ 'OS == "linux"', {
