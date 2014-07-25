@@ -852,52 +852,40 @@ void ODBCConnection::UV_Query(uv_work_t* req) {
 
   uv_mutex_unlock(&ODBC::g_odbcMutex);
 
-  //check to see if should excute a direct or a parameter bound query
-  if (!data->paramCount) {
-    // execute the query directly
-    ret = SQLExecDirect(
-      data->hSTMT,
-      (SQLTCHAR *) data->sql, 
-      data->sqlLen);
-  }
-  else {
-    // prepare statement, bind parameters and execute statement 
-    ret = SQLPrepare(
-      data->hSTMT,
-      (SQLTCHAR *) data->sql, 
-      data->sqlLen);
-    
-    if (ret == SQL_SUCCESS || ret == SQL_SUCCESS_WITH_INFO) {
-      for (int i = 0; i < data->paramCount; i++) {
-        prm = data->params[i];
-        
-        wchar_t* x = L"abc" L"def";
+  // SQLExecDirect will use bound parameters, but without the overhead of SQLPrepare
+  // for a single execution.
+  if (data->paramCount) {
+    for (int i = 0; i < data->paramCount; i++) {
+      prm = data->params[i];
 
-        DEBUG_TPRINTF(
-          SQL_T("ODBCConnection::UV_Query - param[%i]: c_type=%i type=%i buffer_length=%i size=%i length=%i &length=%X\n"), i, prm.c_type, prm.type, 
-          prm.buffer_length, prm.size, prm.length, &data->params[i].length);
+      wchar_t* x = L"abc" L"def";
 
-        ret = SQLBindParameter(
-          data->hSTMT,              //StatementHandle
-          i + 1,                    //ParameterNumber
-          SQL_PARAM_INPUT,          //InputOutputType
-          prm.c_type,               //ValueType
-          prm.type,                 //ParameterType
-          prm.size,                 //ColumnSize
-          prm.decimals,             //DecimalDigits
-          prm.buffer,               //ParameterValuePtr
-          prm.buffer_length,        //BufferLength
-          //using &prm.length did not work here...
-          &data->params[i].length); //StrLen_or_IndPtr
-        
-        if (ret == SQL_ERROR) {break;}
-      }
+      DEBUG_TPRINTF(
+        SQL_T("ODBCConnection::UV_Query - param[%i]: c_type=%i type=%i buffer_length=%i size=%i length=%i &length=%X\n"), i, prm.c_type, prm.type,
+        prm.buffer_length, prm.size, prm.length, &data->params[i].length);
 
-      if (SQL_SUCCEEDED(ret)) {
-        ret = SQLExecute(data->hSTMT);
-      }
+      ret = SQLBindParameter(
+        data->hSTMT,              //StatementHandle
+        i + 1,                    //ParameterNumber
+        SQL_PARAM_INPUT,          //InputOutputType
+        prm.c_type,               //ValueType
+        prm.type,                 //ParameterType
+        prm.size,                 //ColumnSize
+        prm.decimals,             //DecimalDigits
+        prm.buffer,               //ParameterValuePtr
+        prm.buffer_length,        //BufferLength
+        //using &prm.length did not work here...
+        &data->params[i].length); //StrLen_or_IndPtr
+
+      if (ret == SQL_ERROR) { break; }
     }
   }
+
+  // execute the query directly
+  ret = SQLExecDirect(
+    data->hSTMT,
+    (SQLTCHAR *)data->sql,
+    data->sqlLen);
 
   // this will be checked later in UV_AfterQuery
   data->result = ret;
