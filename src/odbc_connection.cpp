@@ -858,8 +858,6 @@ void ODBCConnection::UV_Query(uv_work_t* req) {
     for (int i = 0; i < data->paramCount; i++) {
       prm = data->params[i];
 
-      wchar_t* x = L"abc" L"def";
-
       DEBUG_TPRINTF(
         SQL_T("ODBCConnection::UV_Query - param[%i]: c_type=%i type=%i buffer_length=%i size=%i length=%i &length=%X\n"), i, prm.c_type, prm.type,
         prm.buffer_length, prm.size, prm.length, &data->params[i].length);
@@ -877,7 +875,7 @@ void ODBCConnection::UV_Query(uv_work_t* req) {
         //using &prm.length did not work here...
         &data->params[i].length); //StrLen_or_IndPtr
 
-      if (ret == SQL_ERROR) { 
+      if (ret == SQL_ERROR) {
         data->result = ret;
         return;
       }
