@@ -877,7 +877,10 @@ void ODBCConnection::UV_Query(uv_work_t* req) {
         //using &prm.length did not work here...
         &data->params[i].length); //StrLen_or_IndPtr
 
-      if (ret == SQL_ERROR) { break; }
+      if (ret == SQL_ERROR) { 
+        data->result = ret;
+        return;
+      }
     }
   }
 
