@@ -260,28 +260,39 @@ void ODBCResult::UV_AfterFetch(uv_work_t* work_req, int status) {
   }
 
   if (moreWork) {
-    Handle<Value> args[3];
+    Handle<Value> args[3], value;
 
     args[0] = Null();
     if (data->fetchMode == FETCH_ARRAY) {
-      args[1] = ODBC::GetRecordArray(
+      value = ODBC::GetRecordArray(
         data->objResult->m_hSTMT,
         data->objResult->columns,
         &data->objResult->colCount,
         data->objResult->buffer,
-        data->objResult->bufferLength);
+        data->objResult->bufferLength,
+        objError);
+
+      if (objError.IsEmpty())
+          args[1] = value;
     }
     else if (data->fetchMode == FETCH_OBJECT) {
-      args[1] = ODBC::GetRecordTuple(
+      value = ODBC::GetRecordTuple(
         data->objResult->m_hSTMT,
         data->objResult->columns,
         &data->objResult->colCount,
         data->objResult->buffer,
-        data->objResult->bufferLength);
+        data->objResult->bufferLength,
+        objError);
+
+      if (objError.IsEmpty())
+          args[1] = value;
     }
     else {
       args[1] = Null();
     }
+
+    if (!objError.IsEmpty())
+        args[0] = objError;
 
     args[2] = True();
 
@@ -388,7 +399,8 @@ Handle<Value> ODBCResult::FetchSync(const Arguments& args) {
         objResult->columns,
         &objResult->colCount,
         objResult->buffer,
-        objResult->bufferLength);
+        objResult->bufferLength,
+        objError);
     }
     else if (fetchMode == FETCH_OBJECT) {
       data = ODBC::GetRecordTuple(
@@ -396,10 +408,14 @@ Handle<Value> ODBCResult::FetchSync(const Arguments& args) {
         objResult->columns,
         &objResult->colCount,
         objResult->buffer,
-        objResult->bufferLength);
+        objResult->bufferLength,
+        objError);
     } else {
       data = Null();
     }
+
+    if (!objError.IsEmpty())
+        return ThrowException(objError);
     
     return scope.Close(data);
   }
@@ -497,6 +513,8 @@ void ODBCResult::UV_AfterFetchAll(uv_work_t* work_req, int status) {
   if (self->colCount == 0) {
     self->columns = ODBC::GetColumns(self->m_hSTMT, &self->colCount);
   }
+
+  Handle<Object> localError;
   
   //check to see if the result set has columns
   if (self->colCount == 0) {
@@ -521,27 +539,37 @@ void ODBCResult::UV_AfterFetchAll(uv_work_t* work_req, int status) {
     doMoreWork = false;
   }
   else {
+    Handle<Value> value;
+
     if (data->fetchMode == FETCH_ARRAY) {
-      data->rows->Set(
-        Integer::New(data->count), 
-        ODBC::GetRecordArray(
+      value = ODBC::GetRecordArray(
           self->m_hSTMT,
           self->columns,
           &self->colCount,
           self->buffer,
-          self->bufferLength)
-      );
+          self->bufferLength,
+          localError);
+
+      if (localError.IsEmpty())
+          data->rows->Set(
+            Integer::New(data->count),
+            value
+          );
     }
     else if (data->fetchMode == FETCH_OBJECT) {
-      data->rows->Set(
-        Integer::New(data->count), 
-        ODBC::GetRecordTuple(
+      value = ODBC::GetRecordTuple(
           self->m_hSTMT,
           self->columns,
           &self->colCount,
           self->buffer,
-          self->bufferLength)
-      );
+          self->bufferLength,
+          localError);
+
+      if (localError.IsEmpty())
+          data->rows->Set(
+            Integer::New(data->count), 
+            value
+          );
     }
     data->count++;
   }
@@ -562,7 +590,9 @@ void ODBCResult::UV_AfterFetchAll(uv_work_t* work_req, int status) {
     if (data->errorCount > 0) {
       args[0] = Local<Object>::New(data->objError);
     }
-    else {
+    else if (!localError.IsEmpty()) {
+      args[0] = localError;
+    } else {
       args[0] = Null();
     }
     
@@ -600,7 +630,7 @@ Handle<Value> ODBCResult::FetchAllSync(const Arguments& args) {
   
   ODBCResult* self = ObjectWrap::Unwrap<ODBCResult>(args.Holder());
   
-  Local<Object> objError = Object::New();
+  Handle<Object> objError = Object::New();
   
   SQLRETURN ret;
   int count = 0;
@@ -628,9 +658,7 @@ Handle<Value> ODBCResult::FetchAllSync(const Arguments& args) {
       ret = SQLFetch(self->m_hSTMT);
       
       //check to see if there was an error
-      if (ret == SQL_ERROR)  {
-        errorCount++;
-        
+      if (ret == SQL_ERROR) {        
         objError = ODBC::GetSQLError(
           SQL_HANDLE_STMT, 
           self->m_hSTMT,
@@ -649,6 +677,7 @@ Handle<Value> ODBCResult::FetchAllSync(const Arguments& args) {
       }
 
       Handle<Value> value;
+      Handle<Object> exception;
       if (fetchMode == FETCH_ARRAY)
         value = 
           ODBC::GetRecordArray(
@@ -656,16 +685,22 @@ Handle<Value> ODBCResult::FetchAllSync(const Arguments& args) {
             self->columns,
             &self->colCount,
             self->buffer,
-            self->bufferLength);
+            self->bufferLength,
+            exception);
       else if (fetchMode == FETCH_OBJECT)
         value = ODBC::GetRecordTuple(
             self->m_hSTMT,
             self->columns,
             &self->colCount,
             self->buffer,
-            self->bufferLength);
+            self->bufferLength,
+            exception);
 
-      rows->Set(Integer::New(count), value);
+      if (exception.IsEmpty())
+        rows->Set(Integer::New(count), value);
+      else if (objError.IsEmpty())
+        objError = exception;
+
       count++;
     }
   }
@@ -674,7 +709,7 @@ Handle<Value> ODBCResult::FetchAllSync(const Arguments& args) {
   }
   
   //throw the error object if there were errors
-  if (errorCount > 0) {
+  if (!objError.IsEmpty()) {
     ThrowException(objError);
   }
   
@@ -938,7 +973,13 @@ Handle<Value> ODBCResult::GetColumnValueSync(const Arguments& args) {
 
   DEBUG_PRINTF("ODBCResult::GetColumnValueSync: columns=0x%x, colCount=%i, column=%i, maxBytes=%i\n", objODBCResult->columns, objODBCResult->colCount, col, maxBytes);
 
-  return scope.Close(
-    ODBC::GetColumnValue(objODBCResult->m_hSTMT, objODBCResult->columns[col], objODBCResult->buffer, maxBytes, true)
-  );
+  Handle<Value> value;
+  Handle<Object> exception;
+  ODBC::GetColumnValue(objODBCResult->m_hSTMT, objODBCResult->columns[col], objODBCResult->buffer, maxBytes, exception, true);
+
+  if (!exception.IsEmpty())
+      return ThrowException(exception);
+
+  assert(!value.IsEmpty());
+  return scope.Close(value);
 }

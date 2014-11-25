@@ -83,14 +83,14 @@ class ODBC : public node::ObjectWrap {
     static Handle<Value> ConvertColumnValue(SQLSMALLINT cType, uint16_t* buffer, SQLINTEGER bytesInBuffer, node::Buffer* resultBuffer, size_t resultBufferOffset);
     static SQLRETURN FetchMoreData(SQLHSTMT hStmt, const Column& column, SQLSMALLINT cType, SQLLEN& bytesAvailable, SQLLEN& bytesRead, void* internalBuffer, SQLLEN internalBufferLength, void* resultBuffer, size_t& offset, SQLLEN resultBufferLength);
     static Handle<Value> InterpretBuffers(SQLSMALLINT cType, void* internalBuffer, SQLLEN bytesRead, Handle<Object> resultBufferHandle, void* resultBuffer, size_t resultBufferOffset);
-    static Handle<Value> GetColumnValue(SQLHSTMT hStmt, Column column, uint16_t* buffer, SQLLEN bufferLength, bool partial = false, bool fetch = true);
-    static Local<Object> GetRecordTuple (SQLHSTMT hStmt, Column* columns, short* colCount, uint16_t* buffer, int bufferLength);
-    static Handle<Value> GetRecordArray (SQLHSTMT hStmt, Column* columns, short* colCount, uint16_t* buffer, int bufferLength);
+    static Handle<Value> GetColumnValue(SQLHSTMT hStmt, Column column, uint16_t* buffer, SQLLEN bufferLength, Handle<Object>& exception, bool partial = false, bool fetch = true);
+    static Local<Object> GetRecordTuple(SQLHSTMT hStmt, Column* columns, short* colCount, uint16_t* buffer, int bufferLength, Handle<Object>& exception);
+    static Handle<Value> GetRecordArray(SQLHSTMT hStmt, Column* columns, short* colCount, uint16_t* buffer, int bufferLength, Handle<Object>& exception);
     static Handle<Value> CallbackSQLError (SQLSMALLINT handleType, SQLHANDLE handle, Persistent<Function> cb);
     static Handle<Value> CallbackSQLError (SQLSMALLINT handleType, SQLHANDLE handle, char* message, Persistent<Function> cb);
     static Local<Object> GetSQLError (SQLSMALLINT handleType, SQLHANDLE handle);
     static Local<Object> GetSQLError (SQLSMALLINT handleType, SQLHANDLE handle, char* message);
-    static Local<Array>  GetAllRecordsSync (HENV hENV, HDBC hDBC, HSTMT hSTMT, uint16_t* buffer, int bufferLength);
+    static Local<Array>  GetAllRecordsSync(HENV hENV, HDBC hDBC, HSTMT hSTMT, uint16_t* buffer, int bufferLength, Handle<Object>& exception);
 #ifdef dynodbc
     static Handle<Value> LoadODBCLibrary(const Arguments& args);
 #endif

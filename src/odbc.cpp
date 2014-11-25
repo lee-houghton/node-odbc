@@ -542,7 +542,7 @@ SQLRETURN ODBC::FetchMoreData( SQLHSTMT hStmt, const Column& column, SQLSMALLINT
 
 Handle<Value> ODBC::GetColumnValue( SQLHSTMT hStmt, Column column, 
                                     uint16_t* buffer, SQLLEN bufferLength,
-                                    bool partial, bool fetch) {
+                                    Handle<Object>& exception, bool partial, bool fetch) {
   HandleScope scope;
 
   // Reset the buffer
@@ -566,8 +566,10 @@ Handle<Value> ODBC::GetColumnValue( SQLHSTMT hStmt, Column column,
         //      Ensure this won't break anything.
 
         SQLRETURN ret = GetColumnData(hStmt, column, buffer, bufferLength, cType, bytesAvailable);
-        if (!SQL_SUCCEEDED(ret))
-          return ThrowException(ODBC::GetSQLError(SQL_HANDLE_STMT, hStmt));
+        if (!SQL_SUCCEEDED(ret)) {
+          exception = ODBC::GetSQLError(SQL_HANDLE_STMT, hStmt, "ODBC::GetColumnValue: Error getting data for fixed-length column");
+          return Handle<Value>();
+        }
 
         if (bytesAvailable == SQL_NULL_DATA)
           return scope.Close(Null());
@@ -609,8 +611,10 @@ Handle<Value> ODBC::GetColumnValue( SQLHSTMT hStmt, Column column,
     if (bytesAvailable == SQL_NULL_DATA)
       return scope.Close(Null());
 
-    if (!SQL_SUCCEEDED(ret))
-      return ThrowException(ODBC::GetSQLError(SQL_HANDLE_STMT, hStmt, "ODBC::GetColumnValue: Error getting data for result column"));
+    if (!SQL_SUCCEEDED(ret)) {
+      exception = ODBC::GetSQLError(SQL_HANDLE_STMT, hStmt, "ODBC::GetColumnValue: Error getting data for result column");
+      return Handle<Value>();
+    }
     
     if (slowBuffer)
       assert(offset <= Buffer::Length(slowBuffer));
@@ -672,14 +676,14 @@ Handle<Value> ODBC::InterpretBuffers( SQLSMALLINT cType,
 
 Local<Object> ODBC::GetRecordTuple ( SQLHSTMT hStmt, Column* columns, 
                                      short* colCount, uint16_t* buffer,
-                                     int bufferLength) {
+                                     int bufferLength, Handle<Object>& exception) {
   HandleScope scope;
   
   Local<Object> tuple = Object::New();
         
   for(int i = 0; i < *colCount; i++) {
-    Handle<Value> value = GetColumnValue( hStmt, columns[i], buffer, bufferLength );
-    if (value->IsUndefined())
+    Handle<Value> value = GetColumnValue( hStmt, columns[i], buffer, bufferLength, exception );
+    if (value.IsEmpty())
       return scope.Close(Local<Object>());
 #ifdef UNICODE
     tuple->Set( String::New((uint16_t *) columns[i].name), value );
@@ -697,15 +701,15 @@ Local<Object> ODBC::GetRecordTuple ( SQLHSTMT hStmt, Column* columns,
  */
 
 Handle<Value> ODBC::GetRecordArray ( SQLHSTMT hStmt, Column* columns, 
-                                         short* colCount, uint16_t* buffer,
-                                         int bufferLength) {
+                                     short* colCount, uint16_t* buffer,
+                                     int bufferLength, Handle<Object>& exception) {
   HandleScope scope;
   
   Local<Array> array = Array::New();
         
   for(int i = 0; i < *colCount; i++) {
-    Handle<Value> value = GetColumnValue( hStmt, columns[i], buffer, bufferLength );
-    if (value->IsUndefined())
+    Handle<Value> value = GetColumnValue( hStmt, columns[i], buffer, bufferLength, exception );
+    if (value.IsEmpty())
       return scope.Close(Handle<Value>());
     array->Set( Integer::New(i), value );
   }
@@ -968,15 +972,13 @@ Local<Array> ODBC::GetAllRecordsSync (HENV hENV,
                                      HDBC hDBC, 
                                      HSTMT hSTMT,
                                      uint16_t* buffer,
-                                     int bufferLength) {
+                                     int bufferLength,
+                                     Handle<Object>& exception) {
   DEBUG_PRINTF("ODBC::GetAllRecordsSync\n");
   
   HandleScope scope;
   
-  Local<Object> objError = Object::New();
-  
   int count = 0;
-  int errorCount = 0;
   short colCount = 0;
   
   Column* columns = GetColumns(hSTMT, &colCount);
@@ -987,20 +989,14 @@ Local<Array> ODBC::GetAllRecordsSync (HENV hENV,
   while (true) {
     SQLRETURN ret = SQLFetch(hSTMT);
     
-    //check to see if there was an error
+    // Check to see if there was an error. We can just throw an error here because we're being called from JS-land.
     if (ret == SQL_ERROR)  {
-      //TODO: what do we do when we actually get an error here...
-      //should we throw??
-      
-      errorCount++;
-      
-      objError = ODBC::GetSQLError(
+      ThrowException(ODBC::GetSQLError(
         SQL_HANDLE_STMT, 
         hSTMT,
         (char *) "[node-odbc] Error in ODBC::GetAllRecordsSync"
-      );
-      
-      break;
+      ));
+      return Local<Array>();
     }
     
     //check to see if we are at the end of the recordset
@@ -1010,20 +1006,30 @@ Local<Array> ODBC::GetAllRecordsSync (HENV hENV,
       break;
     }
 
-    rows->Set(
-      Integer::New(count), 
-      ODBC::GetRecordTuple(
+    Handle<Value> value =
+        ODBC::GetRecordTuple(
         hSTMT,
         columns,
         &colCount,
         buffer,
-        bufferLength)
+        bufferLength,
+        exception);
+
+    if (!exception.IsEmpty()) {
+        ThrowException(exception);
+        return Local<Array>();
+    }
+
+    assert(!value.IsEmpty());
+
+    rows->Set(
+      Integer::New(count),
+      value
     );
 
     count++;
   }
-  //TODO: what do we do about errors!?!
-  //we throw them
+
   return scope.Close(rows);
 }
 
