@@ -973,9 +973,8 @@ Handle<Value> ODBCResult::GetColumnValueSync(const Arguments& args) {
 
   DEBUG_PRINTF("ODBCResult::GetColumnValueSync: columns=0x%x, colCount=%i, column=%i, maxBytes=%i\n", objODBCResult->columns, objODBCResult->colCount, col, maxBytes);
 
-  Handle<Value> value;
-  Handle<Object> exception;
-  ODBC::GetColumnValue(objODBCResult->m_hSTMT, objODBCResult->columns[col], objODBCResult->buffer, maxBytes, exception, true);
+  Handle<Object> exception; 
+  Handle<Value> value = ODBC::GetColumnValue(objODBCResult->m_hSTMT, objODBCResult->columns[col], objODBCResult->buffer, maxBytes, exception, true);
 
   if (!exception.IsEmpty())
       return ThrowException(exception);
