@@ -513,8 +513,6 @@ void ODBCResult::UV_AfterFetchAll(uv_work_t* work_req, int status) {
   if (self->colCount == 0) {
     self->columns = ODBC::GetColumns(self->m_hSTMT, &self->colCount);
   }
-
-  Handle<Object> localError;
   
   //check to see if the result set has columns
   if (self->colCount == 0) {
@@ -540,6 +538,7 @@ void ODBCResult::UV_AfterFetchAll(uv_work_t* work_req, int status) {
   }
   else {
     Handle<Value> value;
+    Handle<Object> error;
 
     if (data->fetchMode == FETCH_ARRAY) {
       value = ODBC::GetRecordArray(
@@ -548,12 +547,12 @@ void ODBCResult::UV_AfterFetchAll(uv_work_t* work_req, int status) {
           &self->colCount,
           self->buffer,
           self->bufferLength,
-          localError);
+          error);
 
-      if (localError.IsEmpty())
+      if (error.IsEmpty())
           data->rows->Set(
-            Integer::New(data->count),
-            value
+          Integer::New(data->count),
+          value
           );
     }
     else if (data->fetchMode == FETCH_OBJECT) {
@@ -563,15 +562,22 @@ void ODBCResult::UV_AfterFetchAll(uv_work_t* work_req, int status) {
           &self->colCount,
           self->buffer,
           self->bufferLength,
-          localError);
+          error);
 
-      if (localError.IsEmpty())
+      if (error.IsEmpty())
           data->rows->Set(
             Integer::New(data->count), 
             value
           );
     }
-    data->count++;
+
+    if (error.IsEmpty()) {
+        data->count++;
+    } else {
+        doMoreWork = false;
+        data->errorCount++;
+        data->objError = Persistent<Object>::New(error);
+    }
   }
   
   if (doMoreWork) {
@@ -589,9 +595,6 @@ void ODBCResult::UV_AfterFetchAll(uv_work_t* work_req, int status) {
     
     if (data->errorCount > 0) {
       args[0] = Local<Object>::New(data->objError);
-    }
-    else if (!localError.IsEmpty()) {
-      args[0] = localError;
     } else {
       args[0] = Null();
     }
